@@ -169,6 +169,8 @@ def substitute_simulation_parameters(constants, values, simulation_name='opensbl
                     floats = [x for x in re.findall(r"[-+]?(?:\d*\.*\d+)", value) if '.' in x]
                     for input_float in floats:
                         value = value.replace(input_float, input_float + 'f')
+                # In isinstance(SimulationDataType.dtype(), Half)'s case, this will create a double floating point literal that will be converted to half.
+                # It'll produce compiler warnings, but the only consequence is a one-off conversion.
                 new_str = const + ' = %s' % value + ';'
                 s = s.replace(old_str, new_str)
         f.write(s)

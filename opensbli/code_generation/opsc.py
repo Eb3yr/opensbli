@@ -14,7 +14,7 @@ from opensbli.core.opensbliobjects import ConstantObject, ConstantIndexed, Const
 from sympy import Symbol, flatten, Rational, nsimplify
 from opensbli.core.grid import GridVariable
 from opensbli.core.datatypes import SimulationDataType
-from opensbli.core.datatypes import FloatC, Double
+from opensbli.core.datatypes import Half, FloatC, Double
 from sympy import Pow, Idx, pprint, count_ops, Piecewise
 import os
 import logging
@@ -93,6 +93,8 @@ class OPSCCodePrinter(C99CodePrinter):
         p, q = int(expr.p), int(expr.q)
         if isinstance(SimulationDataType.dtype(), FloatC):
             return '(%d.0f/%d.0f)' % (p, q)
+        elif isinstance(SimulationDataType.dtype(), Half):
+            return '(%d.0f16/%d.0f16)' % (p, q)
         else:
             return '(%d.0/%d.0)' % (p, q)
 
@@ -104,6 +106,8 @@ class OPSCCodePrinter(C99CodePrinter):
     def _print_Float(self, expr):
         if isinstance(SimulationDataType.dtype(), FloatC):
             return str(float(expr)) + 'f'
+        elif isinstance(SimulationDataType.dtype(), Half):
+            return str(float(expr)) + 'f16'
         else:
             return super()._print_Float(expr)
 
@@ -218,6 +222,8 @@ class OPSCCodePrinter(C99CodePrinter):
         """ Replace pow function calls with direct multiplication."""
         if isinstance(SimulationDataType.dtype(), FloatC):
             sqrt, pow_func, one = 'sqrtf(', 'powf(', '1.0f'
+        elif isinstance(SimulationDataType.dtype(), Half):
+            sqrt, pow_func, one = 'sqrt(', 'pow(', '1.0f16'
         else:
             sqrt, pow_func, one = 'sqrt(', 'pow(', '1.0'
         PREC = precedence(expr)
@@ -781,7 +787,7 @@ class OPSC(object):
         # Sort the gridvariables to fix the order
         gridvariables = sorted(list(gridvariables), key=lambda x: str(x))
         for gv in gridvariables:
-            code += ["%s %s = 0.0;" % (SimulationDataType.opsc(), str(gv))]
+            code += ["%s %s = 0.0%s;" % (SimulationDataType.opsc(), str(gv), "f" if isinstance(SimulationDataType.dtype(), FloatC) else "f16" if isinstance(SimulationDataType.dtype(), Half) else "")]
         # if '\n' in out[-1]:
         #     out[-1] = out[-1].replace('\n', '', out[-1].count(' \n ')-1)
         code += out + ['}']  # close Kernel
@@ -1170,7 +1176,7 @@ class OPSC(object):
     def declare_reduction(self, rv):
         """ Declare a reduction variable in the code with the necessary handles."""
         dtype = SimulationDataType.dtype()
-        variable_declaration = WriteString("%s %s = 0.0;" % (dtype.opsc(), str(rv.value)))
+        variable_declaration = WriteString("%s %s = 0.0%s;" % (dtype.opsc(), str(rv.value), "f" if isinstance(SimulationDataType.dtype(), FloatC) else "f16" if isinstance(SimulationDataType.dtype(), Half) else ""))
         handle_declaration = WriteString('ops_reduction %s = ops_decl_reduction_handle(sizeof(%s), \"%s\", \"reduction_%s\");' % (str(rv), dtype.opsc(), dtype.opsc(), str(rv)))
         out = [variable_declaration, handle_declaration]
         return out
