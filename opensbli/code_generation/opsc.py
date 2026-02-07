@@ -832,7 +832,7 @@ class OPSC(object):
 
     def before_main(self, algorithm):
         """ Adds the required preamble to the main opensbli.cpp file and declares the simulation constants."""
-        out = ['#include <stdlib.h> \n#include <string.h> \n#include <math.h> \n#include "constants.h"' ]
+        out = ['#include <stdlib.h> \n#include <string.h> \n#include <math.h>' ]
         from opensbli.core.kernel import ConstantsToDeclare
         # Declare a restart flag and loop variables globally
         constant_declarations = ["%s %s;" % ('int', 'restart')]
@@ -858,6 +858,7 @@ class OPSC(object):
         out += ['#define OPS_%dD' % algorithm.block_descriptions[0].ndim]
         if self.OPS_V2:
             out += ['#define OPS_API 2']
+        out += ['#include "ops_lib_core.h"', '#include "constants.h"']
         out += ['#include \"ops_seq.h\"']
         for b in algorithm.block_descriptions:
             out += ['#include \"%s_kernels.h\"' % b.block_name]
