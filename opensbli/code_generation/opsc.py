@@ -11,6 +11,7 @@ from sympy.printing.ccode import C99CodePrinter
 # from sympy.printing.c import C99CodePrinter
 from sympy.core.relational import Equality
 from opensbli.core.opensbliobjects import ConstantObject, ConstantIndexed, Constant, DataSetBase, GroupedPiecewise, ReductionVariable, DataObject, DataSet, WhileLoop, ForLoop
+from opensbli.equation_types.opensbliequations import OpenSBLIEquation
 from sympy import Symbol, flatten, Rational, nsimplify
 from opensbli.core.grid import GridVariable
 from opensbli.core.datatypes import SimulationDataType
@@ -242,7 +243,6 @@ class OPSCCodePrinter(C99CodePrinter):
                 return super()._print_Pow(expr)
 
     def _print_Equality(self, expr):
-        from opensbli.equation_types.opensbliequations import OpenSBLIEquation
         if isinstance(expr, OpenSBLIEquation):
             return "%s = %s" % (self._print(expr.lhs), self._print(expr.rhs))
         else:
@@ -627,6 +627,50 @@ class OPSC(object):
                     dset.cast_precision = False
         return input_eqn
 
+    def __cast_eq_precision(self, eq, max_depth : int = 8):
+        """Function to apply casting the precision of equations."""
+        if max_depth == 0:  # Guard against unbound recursion.
+            raise ValueError("Exceeded recursion depth limit specified by max_depth.")
+        if isinstance(eq, WhileLoop):
+            raise ValueError("Mixed precision not implemented yet for WhileLoop.")
+        elif isinstance(eq, ForLoop):
+            raise ValueError("Mixed precision not implemented yet for ForLoop.")
+        
+        if isinstance(eq, Piecewise):  # GroupedPiecewise inherits from Piecewise so we can handle both.
+            for expr, _ in eq.args:
+                if is_sequence(expr):
+                    for single_eqn in expr:
+                        self.__cast_eq_precision(single_eqn, max_depth - 1)
+                else:  # Sometimes expr is an OpenSBLIEquation, rather than List[OpenSBLIEquation]. 
+                    self.__cast_eq_precision(expr, max_depth - 1)
+        
+        elif isinstance(eq, OpenSBLIEquation):
+            # Never cast precision of left-hand side assignments
+            LHS_of_equation = eq.lhs
+            if isinstance(eq.lhs, DataSet):
+                eq.lhs.cast_precision = False
+            # Check for Piecewise conditions
+            if isinstance(eq.rhs, Piecewise):
+                eq.lhs.cast_precision = False
+            else: # LHS of the equation is a DataSet
+                # # Quantity does not appear on the right hand side of the equation also
+                # if LHS_of_equation not in eq.rhs.atoms(DataSet):
+                #     eq.lhs.cast_precision = True
+                if isinstance(eq.rhs, Piecewise):
+                    for pairs in eq.rhs.args:
+                        pw_expr = pairs[0]
+                        for dset in pw_expr.atoms(DataSet):
+                            dset.cast_precision = True
+                    eq.lhs.cast_precision = False
+                else: # Regular equation
+                    eq = self.add_casting_switch(eq)
+                    # Make sure LHS is not cast
+                    if not isinstance(LHS_of_equation, GridVariable):
+                        eq.lhs.cast_precision = False
+        
+        # If we can't reduce the precision of eq, simply skip.
+        return
+
     def kernel_computation_opsc(self, kernel):
         """ Function to write the out the contents of each computational kernel."""
         ins = kernel.rhs_datasetbases
@@ -670,47 +714,8 @@ class OPSC(object):
             bool_settings = {'kernel': True, 'OPS_V2': self.OPS_V2, 'arrays_to_cast' : self.arrays_to_cast, 'boolean_equality' : True}
             # Note which DataSets are used on the LHS of equations
             if self.cast_precision:
-                if isinstance(eq, GroupedPiecewise):
-                    for i, (expr, condition) in enumerate(eq.args):
-                        # Process all grouped equations within this condition
-                        for single_eqn in expr:
-                            # Don't cast LHS
-                            LHS_of_equation = single_eqn.lhs
-                            if isinstance(LHS_of_equation, DataSet):
-                                single_eqn.lhs.cast_precision = False
-                            # Loop over all arguments of this equation
-                            single_eqn = self.add_casting_switch(single_eqn)
-                            # Make sure LHS is not cast
-                            # if not isinstance(LHS_of_equation, GridVariable):
-                            #     single_eqn.lhs.cast_precision = False
-                elif isinstance(eq, WhileLoop):
-                    raise ValueError("Mixed precision not implemented yet for WhileLoop.")
-                elif isinstance(eq, ForLoop):
-                    raise ValueError("Mixed precision not implemented yet for ForLoop.")
-                else: # Regular equations
-                    # Never cast precision of left-hand side assignments
-                    LHS_of_equation = eq.lhs
-                    if isinstance(eq.lhs, DataSet):
-                        eq.lhs.cast_precision = False
-                    # # Check for Piecewise conditions
-                    if isinstance(eq.rhs, Piecewise):
-                        eq.lhs.cast_precision = False
-                    else: # LHS of the equation is a DataSet
-                        # # Quantity does not appear on the right hand side of the equation also
-                        # if LHS_of_equation not in eq.rhs.atoms(DataSet):
-                        #     eq.lhs.cast_precision = True
-                        if isinstance(eq.rhs, Piecewise):
-                            for pairs in eq.rhs.args:
-                                pw_expr = pairs[0]
-                                for dset in pw_expr.atoms(DataSet):
-                                    dset.cast_precision = True
-                            eq.lhs.cast_precision = False
-                        else: # Regular equation
-                            eq = self.add_casting_switch(eq)
-                            # Make sure LHS is not cast
-                            if not isinstance(LHS_of_equation, GridVariable):
-                                eq.lhs.cast_precision = False
-
+                self.__cast_eq_precision(eq)
+                
             # Get the grid variables
             gridvariables = gridvariables.union(eq.atoms(GridVariable))
             # Get the reduction variables and detect whether they are input or output
