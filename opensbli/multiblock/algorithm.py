@@ -28,6 +28,7 @@ class TraditionalAlgorithmRKMB(object):
         self.ntimers = 0
         self.MultiBlock = True
         self.simulation_monitor = simulation_monitor
+        self.blocks = blocks.blocks
         # For restart flag in the definitions to restart the time-advance arrays
         self.time_advance_arrays = []
         from opensbli.equation_types.opensbliequations import SimulationEquations
