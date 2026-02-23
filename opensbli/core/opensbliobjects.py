@@ -261,16 +261,13 @@ class ConstantObject(EinsteinTerm, Constant):
         return self._value
 
     @value.setter
-    def value(self, numerical_value, dtype=None):
+    def value(self, numerical_value):
         """Sets the value of the Constant.
         :param numerical_value: Value to be set for the Constant.
         :param dtype: Data type of the Constant, defaults to SimulationDataType. """
         self.is_input = False
         self._value = numerical_value
-        if dtype:
-            self.datatype = dtype
-        else:
-            self.datatype = SimulationDataType()
+        self.datatype = SimulationDataType()
         return
 
 
@@ -319,15 +316,12 @@ class ConstantIndexed(Indexed, Constant):
         return str(self.base)
 
     @value.setter
-    def value(self, numerical_values, dtype=None):
+    def value(self, numerical_values):
         self.is_input = False
         if len(numerical_values) != len(self.value):
             raise ValueError("Values for ConstantIndexed should be of length of the constants.")
         self._value = numerical_values
-        if dtype:
-            self.datatype = dtype
-        else:
-            self.datatype = SimulationDataType()
+        self.datatype = SimulationDataType()
         return
 
     @property

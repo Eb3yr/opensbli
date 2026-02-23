@@ -153,6 +153,9 @@ def substitute_simulation_parameters(constants, values, simulation_name='opensbl
 
     :arg list constants: List of strings, one for each input constant in the simulation.
     :arg list values: Numerical values corresponding to the strings in the constants list."""
+    
+    print("""WARNING: prefer OPSC(alg, simulation_parameters) rather than substitute_simulation_parameters(simulation_parameters.keys(), simulation_parameters.values()). substitute_simulation_parameters() improperly prints some floating point literal suffixes.""")
+    
     file_path = "./%s.cpp" % simulation_name
     substitutions = dict(zip(constants, values))
     print("Constant simulation values:")

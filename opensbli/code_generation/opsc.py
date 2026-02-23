@@ -19,6 +19,7 @@ from opensbli.core.datatypes import Half, FloatC, Double
 from sympy import Pow, Idx, pprint, count_ops, Piecewise
 import os
 import logging
+import ast
 from collections import OrderedDict
 LOG = logging.getLogger(__name__)
 BUILD_DIR = os.getcwd()
@@ -151,7 +152,6 @@ class OPSCCodePrinter(C99CodePrinter):
     def _print_GridVariable(self, expr):
         """Prints the grid variable"""
         return str(expr)
-
 
     def _print_Abs(self, expr):
         if isinstance(SimulationDataType.dtype(), FloatC):
@@ -406,7 +406,7 @@ def indent_code(code_lines):
 
 
 class OPSC(object):
-    def __init__(self, algorithm, operation_count=False, OPS_diagnostics=1, OPS_V2=True, mixed_precision_config=None):
+    def __init__(self, algorithm, simulation_parameters=None, operation_count=False, OPS_diagnostics=1, OPS_V2=True, mixed_precision_config=None):
         """ Generating an OPSC code from the algorithm class.
         :arg object algorithm: An OpenSBLI algorithm class.
         :arg bool operation_count: If True, prints the number of arithmetic operations per kernel.
@@ -418,6 +418,7 @@ class OPSC(object):
         else:
             self.ops_headers = {'input': "const %s *%s", 'output': '%s *%s', 'inout': '%s *%s'}
         self.OPS_V2 = OPS_V2
+        self.simulation_parameters = simulation_parameters
         # if not algorithm.MultiBlock:
         self.operation_count = operation_count
         self.OPS_diagnostics = OPS_diagnostics
@@ -617,58 +618,20 @@ class OPSC(object):
         code = ', '.join(code)
         return code
 
-    def add_casting_switch(self, input_eqn):
-        RHS_args = input_eqn.rhs.args
-        for argument in RHS_args:
-            for dset in argument.atoms(DataSet):
-                if str(dset) in [str(x) for x in self.arrays_to_cast]:
-                    dset.cast_precision = True
-                else:
-                    dset.cast_precision = False
-        return input_eqn
-
-    def __cast_eq_precision(self, eq, max_depth : int = 8):
+    def __cast_eq_precision(self, eq):
         """Function to apply casting the precision of equations."""
-        if max_depth == 0:  # Guard against unbound recursion.
-            raise ValueError("Exceeded recursion depth limit specified by max_depth.")
         if isinstance(eq, WhileLoop):
             raise ValueError("Mixed precision not implemented yet for WhileLoop.")
         elif isinstance(eq, ForLoop):
             raise ValueError("Mixed precision not implemented yet for ForLoop.")
         
-        if isinstance(eq, Piecewise):  # GroupedPiecewise inherits from Piecewise so we can handle both.
-            for expr, _ in eq.args:
-                if is_sequence(expr):
-                    for single_eqn in expr:
-                        self.__cast_eq_precision(single_eqn, max_depth - 1)
-                else:  # Sometimes expr is an OpenSBLIEquation, rather than List[OpenSBLIEquation]. 
-                    self.__cast_eq_precision(expr, max_depth - 1)
+        # Cast all DataSets found in the hierarchy of Sympy objects in single_eqn, then ensure LHS of an assignment is never cast.
+        for single_eqn in eq.atoms(OpenSBLIEquation):
+            for atom in single_eqn.rhs.atoms(DataSet):
+                atom.cast_precision = True
+            if isinstance(single_eqn.lhs, DataSet): # LHS of an assignment cannot be cast.
+                single_eqn.lhs.cast_precision = False
         
-        elif isinstance(eq, OpenSBLIEquation):
-            # Never cast precision of left-hand side assignments
-            LHS_of_equation = eq.lhs
-            if isinstance(eq.lhs, DataSet):
-                eq.lhs.cast_precision = False
-            # Check for Piecewise conditions
-            if isinstance(eq.rhs, Piecewise):
-                eq.lhs.cast_precision = False
-            else: # LHS of the equation is a DataSet
-                # # Quantity does not appear on the right hand side of the equation also
-                # if LHS_of_equation not in eq.rhs.atoms(DataSet):
-                #     eq.lhs.cast_precision = True
-                if isinstance(eq.rhs, Piecewise):
-                    for pairs in eq.rhs.args:
-                        pw_expr = pairs[0]
-                        for dset in pw_expr.atoms(DataSet):
-                            dset.cast_precision = True
-                    eq.lhs.cast_precision = False
-                else: # Regular equation
-                    eq = self.add_casting_switch(eq)
-                    # Make sure LHS is not cast
-                    if not isinstance(LHS_of_equation, GridVariable):
-                        eq.lhs.cast_precision = False
-        
-        # If we can't reduce the precision of eq, simply skip.
         return
 
     def kernel_computation_opsc(self, kernel):
@@ -1100,8 +1063,34 @@ class OPSC(object):
         else:
             raise NotImplementedError("")
 
+    def __substitute_simulation_parameters(self, constants):
+        """Substitute user provided values for constants defined in the simulation.
+        :arg list constants: List of opensbli.core.opensbliobjects.Constant, the constants for in the simulation."""
+        if self.simulation_parameters is None:
+            return
+        
+        printer = OPSCCodePrinter()
+        for param, value in self.simulation_parameters.items():
+            for c in constants:
+                if not str(c) == param:
+                    continue
+
+                temp_datatype = c.datatype
+                if isinstance(c, ConstantObject):
+                    c.value = printer.doprint(value)
+                elif isinstance(c, ConstantIndexed):
+                    value_list = ast.literal_eval(value)  # Evaluate a string representing a list of numbers as a List.
+                    c.value = value_list
+                c.datatype = temp_datatype
+                break
+        return
+    
     def set_constant_values(self, constants):
         """ Declares all of the constants required by the simulation at the start of the program."""
+        
+        # Substitute simulation_parameters from the problem script before writing C code for constants.
+        self.__substitute_simulation_parameters(constants)
+        
         # First restart any constants from HDF5 if required
         out = []
         out += [WriteString('// Set restart to 1 to restart the simulation from HDF5 file')]
