@@ -373,6 +373,103 @@ class CPP23CodePrinter(OPSCCodePrinter):
                 return '*'.join([pow_func + self.parenthesize(expr.base, PREC) + ', ' + str(expr.exp) + ')'])
             else:
                 return super()._print_Pow(expr)
+                
+class CPP23ExplicitCastCodePrinter(OPSCCodePrinter):
+    """Prints OPSC code using C++23 code capable taking advantage of std::float16_t.
+    Arguments to mathematical function invocations are cast to the SimulationDataType and those operations are performed in SimulationDataType's precision.
+    This differs to CPP23CodePrinter which will use the precision of the argument which may vary at different call sites."""
+    def _print_Rational(self, expr):
+        """ Settings: if rational is True then rational numbers are printed as they are.
+        Otherwise optimisations will be performed for rational constants that are evaluated
+        at the start of the program to reduce divisions."""
+        expr = nsimplify(expr)
+        return '(%s/%s)' % (self._print_Float(expr.p), self._print_Float(expr.q))
+
+    def _get_cast(self):
+        # Force arguments passed to arithmetic functions in this code printer to be cast to the
+        # global simulation data type. 
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            return '(float)'
+        elif isinstance(SimulationDataType.dtype(), Half):
+            return '(half)'
+        return '(double)'
+
+    def _print_Mod(self, expr):
+        return 'fmod(%s(%s))' % (self._get_cast(), self.return_args(expr))
+
+    def _print_Float(self, expr):
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            return str(float(expr)) + 'f'
+        elif isinstance(SimulationDataType.dtype(), Half):
+            return str(float(expr)) + 'f16'
+        return super()._print_Float(expr)
+
+    def _print_sin(self, expr):
+        return 'sin(%s(%s))' % (self._get_cast(), self.return_args(expr))
+
+    def _print_cos(self, expr):
+        return 'cos(%s(%s))' % (self._get_cast(), self.return_args(expr))
+
+    def _print_tan(self, expr):
+        return 'tan(%s(%s))' % (self._get_cast(), self.return_args(expr))
+
+    def _print_sinh(self, expr):
+        return 'sinh(%s(%s))' % (self._get_cast(), self.return_args(expr))
+
+    def _print_cosh(self, expr):
+        return 'cosh(%s(%s))' % (self._get_cast(), self.return_args(expr))
+
+    def _print_tanh(self, expr):
+        return 'tanh(%s(%s))' % (self._get_cast(), self.return_args(expr))
+
+    def _print_Abs(self, expr):
+        return 'fabs(%s(%s))' % (self._get_cast(), self.return_args(expr))
+
+    def _print_Max(self, expr):
+        """MAXIMUM of the arguments, can handle any number of arguments:
+        Max(a,b,c,d) is written as max(a, max(max(b,c),d))"""
+        nargs = len(expr.args)
+        args_code = [self._print(a) for a in expr.args]
+        for i in range(nargs-1):
+            # Max of the last 2 arguments in the array
+            template = 'fmax((%s)(%s), (%s)(%s))' % (self._get_cast(), args_code[-2], self._get_cast(), args_code[-1])
+            # Remove the last 2 entries and append the max of the last 2
+            del args_code[-2:]
+            args_code.append(template)
+        return str(args_code[0])
+
+    def _print_Min(self, expr):
+        """MINIUM of the arguments, can handle any number of arguments:
+        Min(a,b,c,d) is written as min(a, min(min(b,c),d))"""
+        nargs = len(expr.args)
+        args_code = [self._print(a) for a in expr.args]
+        for i in range(nargs-1):
+            # Max of the last 2 arguments in the array
+            template = 'fmin(%s(%s), %s(%s))' % (self._get_cast(), args_code[-2], self._get_cast(), args_code[-1])
+            # Remove the last 2 entries and append the max of the last 2
+            del args_code[-2:]
+            args_code.append(template)
+        return str(args_code[0])
+
+    def _print_Pow(self, expr):
+        """ Replace pow function calls with direct multiplication."""
+        
+        # TODO: Cast calls to sqrt and pow
+        sqrt, pow_func, one = 'sqrt(', 'pow(', self._print_Float(Float(1.0))
+        PREC = precedence(expr)
+        if expr.exp in range(2, 7):
+            return '(' + '*'.join([self.parenthesize(expr.base, PREC)] * int(expr.exp)) + ')'
+        elif expr.exp in range(-6, 0):
+            return '%s/(' % one + ('*'.join([self.parenthesize(expr.base, PREC)] * int(-expr.exp))) + ')'
+        elif expr.exp == Rational(3,2):
+            return '*'.join([self.parenthesize(expr.base, PREC)] + [sqrt + self.parenthesize(expr.base, PREC) + ')'])
+        elif expr.exp == Rational(1,2):
+            return '*'.join([sqrt + self.parenthesize(expr.base, PREC) + ')'])
+        else:
+            if isinstance(SimulationDataType.dtype(), FloatC) or isinstance(SimulationDataType.dtype(), Half):
+                return '*'.join([pow_func + self.parenthesize(expr.base, PREC) + ', ' + str(expr.exp) + ')'])
+            else:
+                return super()._print_Pow(expr)
 
 class CUDACodePrinter(OPSCCodePrinter):
     """Prints OPSC code using CUDA instructions for half precision. Not compatible with C++23's std::float16_t type."""
@@ -488,14 +585,21 @@ class CUDACodePrinter(OPSCCodePrinter):
             args_code.append(template)
         return str(args_code[0])
 
+    def _get_sqrt_function(self):
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            return 'sqrtf('
+        elif isinstance(SimulationDataType.dtype(), Half):
+            return 'hsqrt('
+        return 'sqrt('
+    
     def _print_Pow(self, expr):
         """ Replace pow function calls with direct multiplication."""
         if isinstance(SimulationDataType.dtype(), FloatC):
-            sqrt, pow_func, one = 'sqrtf(', 'powf(', self._print_Float(Float(1.0))
+            sqrt, pow_func, one = self._get_sqrt_function(), 'powf(', self._print_Float(Float(1.0))
         elif isinstance(SimulationDataType.dtype(), Half):
-            sqrt, pow_func, one = 'hsqrt(', '(half)powf((float)', self._print_Float(Float(1.0))
+            sqrt, pow_func, one = self._get_sqrt_function(), '(half)powf((float)', self._print_Float(Float(1.0))
         else:
-            sqrt, pow_func, one = 'sqrt(', 'pow(', self._print_Float(Float(1.0))
+            sqrt, pow_func, one = self._get_sqrt_function(), 'pow(', self._print_Float(Float(1.0))
         PREC = precedence(expr)
         if expr.exp in range(2, 7):
             return '(' + '*'.join([self.parenthesize(expr.base, PREC)] * int(expr.exp)) + ')'
@@ -510,6 +614,10 @@ class CUDACodePrinter(OPSCCodePrinter):
                 return '*'.join([pow_func + self.parenthesize(expr.base, PREC) + ', ' + str(expr.exp) + ')'])
             else:
                 return super()._print_Pow(expr)
+
+    def _print_Sqrt(self, expr):
+        sqrt = self._get_sqrt_function()
+        return '%s%s%s)' % (self._ns, sqrt, self._print(expr.args[0]))
 
     def _print_Equality(self, expr):
         if isinstance(expr, OpenSBLIEquation):
@@ -570,6 +678,8 @@ def create_code_printer(settings):
         return OPSCCodePrinter(settings)
     elif ptr == 'cpp23' or ptr == 'cpp23codeprinter':
         return CPP23CodePrinter(settings)
+    elif ptr == 'cpp23explicit' or ptr == 'cpp23explicitcast' or ptr == 'cpp23explicitcastcodeprinter':
+        return CPP23ExplicitCastCodePrinter(settings)
     elif ptr == 'cuda' or ptr == 'cudacodeprinter':
         return CUDACodePrinter(settings)
     
