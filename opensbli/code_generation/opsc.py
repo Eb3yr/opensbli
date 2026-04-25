@@ -304,10 +304,10 @@ class CPP23CodePrinter(OPSCCodePrinter):
 
     def _print_Float(self, expr):
         if isinstance(SimulationDataType.dtype(), FloatC):
-            return str(float(expr)) + 'f'
+            return str(expr) + 'f'
         elif isinstance(SimulationDataType.dtype(), Half):
-            return str(float(expr)) + 'f16'
-        return super()._print_Float(expr)
+            return str(expr) + 'f16'
+        return str(expr)
 
     def _print_sin(self, expr):
         return 'sin(%s)' % self.return_args(expr)
@@ -374,7 +374,7 @@ class CPP23CodePrinter(OPSCCodePrinter):
             else:
                 return super()._print_Pow(expr)
                 
-class CPP23ExplicitCastCodePrinter(OPSCCodePrinter):
+class CPP23ExplicitCastCodePrinter(CPP23CodePrinter):
     """Prints OPSC code using C++23 code capable taking advantage of std::float16_t.
     Arguments to mathematical function invocations are cast to the SimulationDataType and those operations are performed in SimulationDataType's precision.
     This differs to CPP23CodePrinter which will use the precision of the argument which may vary at different call sites."""
@@ -396,13 +396,6 @@ class CPP23ExplicitCastCodePrinter(OPSCCodePrinter):
 
     def _print_Mod(self, expr):
         return 'fmod(%s(%s))' % (self._get_cast(), self.return_args(expr))
-
-    def _print_Float(self, expr):
-        if isinstance(SimulationDataType.dtype(), FloatC):
-            return str(float(expr)) + 'f'
-        elif isinstance(SimulationDataType.dtype(), Half):
-            return str(float(expr)) + 'f16'
-        return super()._print_Float(expr)
 
     def _print_sin(self, expr):
         return 'sin(%s(%s))' % (self._get_cast(), self.return_args(expr))
