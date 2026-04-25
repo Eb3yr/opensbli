@@ -12,7 +12,7 @@ from sympy.printing.ccode import C99CodePrinter
 from sympy.core.relational import Equality
 from opensbli.core.opensbliobjects import ConstantObject, ConstantIndexed, Constant, DataSetBase, GroupedPiecewise, ReductionVariable, DataObject, DataSet, WhileLoop, ForLoop
 from opensbli.equation_types.opensbliequations import OpenSBLIEquation
-from sympy import Symbol, flatten, Rational, nsimplify
+from sympy import Symbol, Float, flatten, Rational, nsimplify
 from opensbli.core.grid import GridVariable
 from opensbli.core.datatypes import SimulationDataType
 from opensbli.core.datatypes import Half, FloatC, Double
@@ -95,59 +95,48 @@ class OPSCCodePrinter(C99CodePrinter):
         p, q = int(expr.p), int(expr.q)
         if isinstance(SimulationDataType.dtype(), FloatC):
             return '(%d.0f/%d.0f)' % (p, q)
-        elif isinstance(SimulationDataType.dtype(), Half):
-            return '(%d.0f16/%d.0f16)' % (p, q)
         else:
             return '(%d.0/%d.0)' % (p, q)
 
     def _print_Mod(self, expr):
-        """ All modulus functions are expressed as fmod currently and no integer values."""
-        result = 'fmod(%s)' % self.return_args(expr)
-        return result
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            return 'fmodf(%s)' % self.return_args(expr)
+        return 'fmod(%s)' % self.return_args(expr)
 
     def _print_Float(self, expr):
         if isinstance(SimulationDataType.dtype(), FloatC):
             return str(float(expr)) + 'f'
-        elif isinstance(SimulationDataType.dtype(), Half):
-            return str(float(expr)) + 'f16'
-        else:
-            return super()._print_Float(expr)
+        return super()._print_Float(expr)
 
     def _print_sin(self, expr):
         if isinstance(SimulationDataType.dtype(), FloatC):
             return 'sinf(%s)' % self.return_args(expr)
-        else:
-            return 'sin(%s)' % self.return_args(expr)
+        return 'sin(%s)' % self.return_args(expr)
 
     def _print_cos(self, expr):
         if isinstance(SimulationDataType.dtype(), FloatC):
             return 'cosf(%s)' % self.return_args(expr)
-        else:
-            return 'cos(%s)' % self.return_args(expr)
+        return 'cos(%s)' % self.return_args(expr)
 
     def _print_tan(self, expr):
         if isinstance(SimulationDataType.dtype(), FloatC):
             return 'tanf(%s)' % self.return_args(expr)
-        else:
-            return 'tan(%s)' % self.return_args(expr)
+        return 'tan(%s)' % self.return_args(expr)
 
     def _print_sinh(self, expr):
         if isinstance(SimulationDataType.dtype(), FloatC):
             return 'sinhf(%s)' % self.return_args(expr)
-        else:
-            return 'sinh(%s)' % self.return_args(expr)
+        return 'sinh(%s)' % self.return_args(expr)
 
     def _print_cosh(self, expr):
         if isinstance(SimulationDataType.dtype(), FloatC):
             return 'coshf(%s)' % self.return_args(expr)
-        else:
-            return 'cosh(%s)' % self.return_args(expr)
+        return 'cosh(%s)' % self.return_args(expr)
 
     def _print_tanh(self, expr):
         if isinstance(SimulationDataType.dtype(), FloatC):
             return 'tanhf(%s)' % self.return_args(expr)
-        else:
-            return 'tanh(%s)' % self.return_args(expr)
+        return 'tanh(%s)' % self.return_args(expr)
 
     def _print_GridVariable(self, expr):
         """Prints the grid variable"""
@@ -223,8 +212,6 @@ class OPSCCodePrinter(C99CodePrinter):
         """ Replace pow function calls with direct multiplication."""
         if isinstance(SimulationDataType.dtype(), FloatC):
             sqrt, pow_func, one = 'sqrtf(', 'powf(', '1.0f'
-        elif isinstance(SimulationDataType.dtype(), Half):
-            sqrt, pow_func, one = 'sqrt(', 'pow(', '1.0f16'
         else:
             sqrt, pow_func, one = 'sqrt(', 'pow(', '1.0'
         PREC = precedence(expr)
@@ -303,6 +290,246 @@ class OPSCCodePrinter(C99CodePrinter):
         This allows for users to write their own OPS functions and use them in the code."""
         return self._print(fn.args[0]) + '(%s)' % (', '.join([self._print(arg) for arg in fn.args[1:]]))
 
+class CPP23CodePrinter(OPSCCodePrinter):
+    """Prints OPSC code using C++23 code capable taking advantage of std::float16_t."""
+    def _print_Rational(self, expr):
+        """ Settings: if rational is True then rational numbers are printed as they are.
+        Otherwise optimisations will be performed for rational constants that are evaluated
+        at the start of the program to reduce divisions."""
+        expr = nsimplify(expr)
+        return '(%s/%s)' % (self._print_Float(expr.p), self._print_Float(expr.q))
+
+    def _print_Mod(self, expr):
+        return 'fmod(%s)' % self.return_args(expr)
+
+    def _print_Float(self, expr):
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            return str(float(expr)) + 'f'
+        elif isinstance(SimulationDataType.dtype(), Half):
+            return str(float(expr)) + 'f16'
+        return super()._print_Float(expr)
+
+    def _print_sin(self, expr):
+        return 'sin(%s)' % self.return_args(expr)
+
+    def _print_cos(self, expr):
+        return 'cos(%s)' % self.return_args(expr)
+
+    def _print_tan(self, expr):
+        return 'tan(%s)' % self.return_args(expr)
+
+    def _print_sinh(self, expr):
+        return 'sinh(%s)' % self.return_args(expr)
+
+    def _print_cosh(self, expr):
+        return 'cosh(%s)' % self.return_args(expr)
+
+    def _print_tanh(self, expr):
+        return 'tanh(%s)' % self.return_args(expr)
+
+    def _print_Abs(self, expr):
+        return 'fabs(%s)' % self.return_args(expr)
+
+    def _print_Max(self, expr):
+        """MAXIMUM of the arguments, can handle any number of arguments:
+        Max(a,b,c,d) is written as max(a, max(max(b,c),d))"""
+        nargs = len(expr.args)
+        args_code = [self._print(a) for a in expr.args]
+        for i in range(nargs-1):
+            # Max of the last 2 arguments in the array
+            template = 'fmax(%s, %s)' % (args_code[-2], args_code[-1])
+            # Remove the last 2 entries and append the max of the last 2
+            del args_code[-2:]
+            args_code.append(template)
+        return str(args_code[0])
+
+    def _print_Min(self, expr):
+        """MINIUM of the arguments, can handle any number of arguments:
+        Min(a,b,c,d) is written as min(a, min(min(b,c),d))"""
+        nargs = len(expr.args)
+        args_code = [self._print(a) for a in expr.args]
+        for i in range(nargs-1):
+            # Max of the last 2 arguments in the array
+            template = 'fmin(%s, %s)' % (args_code[-2], args_code[-1])
+            # Remove the last 2 entries and append the max of the last 2
+            del args_code[-2:]
+            args_code.append(template)
+        return str(args_code[0])
+
+    def _print_Pow(self, expr):
+        """ Replace pow function calls with direct multiplication."""
+        sqrt, pow_func, one = 'sqrt(', 'pow(', self._print_Float(Float(1.0))
+        PREC = precedence(expr)
+        if expr.exp in range(2, 7):
+            return '(' + '*'.join([self.parenthesize(expr.base, PREC)] * int(expr.exp)) + ')'
+        elif expr.exp in range(-6, 0):
+            return '%s/(' % one + ('*'.join([self.parenthesize(expr.base, PREC)] * int(-expr.exp))) + ')'
+        elif expr.exp == Rational(3,2):
+            return '*'.join([self.parenthesize(expr.base, PREC)] + [sqrt + self.parenthesize(expr.base, PREC) + ')'])
+        elif expr.exp == Rational(1,2):
+            return '*'.join([sqrt + self.parenthesize(expr.base, PREC) + ')'])
+        else:
+            if isinstance(SimulationDataType.dtype(), FloatC) or isinstance(SimulationDataType.dtype(), Half):
+                return '*'.join([pow_func + self.parenthesize(expr.base, PREC) + ', ' + str(expr.exp) + ')'])
+            else:
+                return super()._print_Pow(expr)
+
+class CUDACodePrinter(OPSCCodePrinter):
+    """Prints OPSC code using CUDA instructions for half precision. Not compatible with C++23's std::float16_t type."""
+    def _print_Rational(self, expr):
+        """ Settings: if rational is True then rational numbers are printed as they are.
+        Otherwise optimisations will be performed for rational constants that are evaluated
+        at the start of the program to reduce divisions."""
+        expr = nsimplify(expr)
+        return '(%s/%s)' % (self._print_Float(expr.p), self._print_Float(expr.q))
+
+    def _print_Mod(self, expr):
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            return 'fmodf(%s)' % self.return_args(expr)
+        elif isinstance(SimulationDataType.dtype(), Half):
+            '(half)fmodf((float)%s)' % self.return_args(expr) # No mod instruction for __half
+        return 'fmod(%s)' % self.return_args(expr)
+
+    def _print_Float(self, expr):
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            return str(float(expr)) + 'f'
+        elif isinstance(SimulationDataType.dtype(), Half):
+            # No constructor exists yet for __half(std::float16_t) so use __half(float) for float16 literals.
+            # This isn't constexpr so, unless NVCC aggressively optimises it, this may be leaving performance on the table.
+            return 'half(' + str(float(expr)) + 'f)'
+        return super()._print_Float(expr)
+
+    def _print_sin(self, expr):
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            return 'sinf(%s)' % self.return_args(expr)
+        elif isinstance(SimulationDataType.dtype(), Half):
+            return 'hsin(%s)' % self.return_args(expr)
+        return 'sin(%s)' % self.return_args(expr)
+
+    def _print_cos(self, expr):
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            return 'cosf(%s)' % self.return_args(expr)
+        elif isinstance(SimulationDataType.dtype(), Half):
+            return 'hcos(%s)' % self.return_args(expr)
+        return 'cos(%s)' % self.return_args(expr)
+
+    def _print_tan(self, expr):
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            return 'tanf(%s)' % self.return_args(expr)
+        elif isinstance(SimulationDataType.dtype(), Half):
+            return 'htan(%s)' % self.return_args(expr)
+        return 'tan(%s)' % self.return_args(expr)
+
+    def _print_sinh(self, expr):
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            return 'sinhf(%s)' % self.return_args(expr)
+        elif isinstance(SimulationDataType.dtype(), Half):
+            return 'hsinh(%s)' % self.return_args(expr)
+        return 'sinh(%s)' % self.return_args(expr)
+
+    def _print_cosh(self, expr):
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            return 'coshf(%s)' % self.return_args(expr)
+        elif isinstance(SimulationDataType.dtype(), Half):
+            return 'hcosh(%s)' % self.return_args(expr)
+        return 'cosh(%s)' % self.return_args(expr)
+
+    def _print_tanh(self, expr):
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            return 'tanhf(%s)' % self.return_args(expr)
+        elif isinstance(SimulationDataType.dtype(), Half):
+            return 'htanh(%s)' % self.return_args(expr)
+        return 'tanh(%s)' % self.return_args(expr)
+
+    def _print_Abs(self, expr):
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            return 'fabsf(%s)' % self.return_args(expr)
+        elif isinstance(SimulationDataType.dtype(), Half):
+            return '__habs(%s)' % self.return_args(expr)
+        return 'fabs(%s)' % self.return_args(expr)
+
+    def _print_Max(self, expr):
+        """MAXIMUM of the arguments, can handle any number of arguments:
+        Max(a,b,c,d) is written as max(a, max(max(b,c),d))"""
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            func_call = 'fmaxf(%s, %s)'
+        elif isinstance(SimulationDataType.dtype(), Half):
+            func_call = '__hmax((half)%s, (half)%s)' # Defensive casts for if it gets compared to ints or floats
+        else:
+            func_call = 'fmax(%s, %s)'
+
+        nargs = len(expr.args)
+        args_code = [self._print(a) for a in expr.args]
+        for i in range(nargs-1):
+            # Max of the last 2 arguments in the array
+            template = func_call % (args_code[-2], args_code[-1])
+            # Remove the last 2 entries and append the max of the last 2
+            del args_code[-2:]
+            args_code.append(template)
+        return str(args_code[0])
+
+    def _print_Min(self, expr):
+        """MINIUM of the arguments, can handle any number of arguments:
+        Min(a,b,c,d) is written as min(a, min(min(b,c),d))"""
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            func_call = 'fminf(%s, %s)'
+        elif isinstance(SimulationDataType.dtype(), Half):
+            func_call = '__hmin(((half)%s, (half)%s)' # Defensive casts for if it gets compared to ints or floats
+        else:
+            func_call = 'fmin(%s, %s)'
+
+        nargs = len(expr.args)
+        args_code = [self._print(a) for a in expr.args]
+        for i in range(nargs-1):
+            # Max of the last 2 arguments in the array
+            template = func_call % (args_code[-2], args_code[-1])
+            # Remove the last 2 entries and append the max of the last 2
+            del args_code[-2:]
+            args_code.append(template)
+        return str(args_code[0])
+
+    def _print_Pow(self, expr):
+        """ Replace pow function calls with direct multiplication."""
+        if isinstance(SimulationDataType.dtype(), FloatC):
+            sqrt, pow_func, one = 'sqrtf(', 'powf(', self._print_Float(Float(1.0))
+        elif isinstance(SimulationDataType.dtype(), Half):
+            sqrt, pow_func, one = 'hsqrt(', '(half)powf((float)', self._print_Float(Float(1.0))
+        else:
+            sqrt, pow_func, one = 'sqrt(', 'pow(', self._print_Float(Float(1.0))
+        PREC = precedence(expr)
+        if expr.exp in range(2, 7):
+            return '(' + '*'.join([self.parenthesize(expr.base, PREC)] * int(expr.exp)) + ')'
+        elif expr.exp in range(-6, 0):
+            return '%s/(' % one + ('*'.join([self.parenthesize(expr.base, PREC)] * int(-expr.exp))) + ')'
+        elif expr.exp == Rational(3,2):
+            return '*'.join([self.parenthesize(expr.base, PREC)] + [sqrt + self.parenthesize(expr.base, PREC) + ')'])
+        elif expr.exp == Rational(1,2):
+            return '*'.join([sqrt + self.parenthesize(expr.base, PREC) + ')'])
+        else:
+            if isinstance(SimulationDataType.dtype(), FloatC) or isinstance(SimulationDataType.dtype(), Half):
+                return '*'.join([pow_func + self.parenthesize(expr.base, PREC) + ', ' + str(expr.exp) + ')'])
+            else:
+                return super()._print_Pow(expr)
+
+    def _print_Equality(self, expr):
+        if isinstance(expr, OpenSBLIEquation):
+            # Defensively casting half because the CUDA compiler will not convert eg ints to __half in an equality or inequality.
+            if isinstance(SimulationDataType.dtype(), Half):
+                return "%s = (half)(%s)" % (self._print(expr.lhs), self._print(expr.rhs))
+            return "%s = %s" % (self._print(expr.lhs), self._print(expr.rhs))
+        else:
+            if isinstance(SimulationDataType.dtype(), Half):
+                return "(half)(%s) == (half)(%s)" % (self._print(expr.lhs), self._print(expr.rhs))
+            return "%s == %s" % (self._print(expr.lhs), self._print(expr.rhs))
+            
+    def _print_Relational(self, expr):
+        # CUDA will not convert types like int to half in inequalities so we must convert it manually.
+        # Casting half to half is a no-op so has no performance cost.
+        if isinstance(SimulationDataType.dtype(), Half):
+            op = expr.rel_op
+            return '(half)(%s) $s (half)($s)' % (self._print(expr.lhs), sop, self._print(expr.rhs))
+        
+        return super()._print_Relational(expr)
 
 def pow_to_constant(expr):
     """Finds the negative powers of constant objects and evaluates them to a new constant object to reduce divisions."""
@@ -336,6 +563,20 @@ def pow_to_constant(expr):
     rc.name = orig_name  # change it back to the original name of Rational counter
     return expr
 
+def create_code_printer(settings):
+    if 'code_printer' not in settings.keys():
+        return OPSCCodePrinter(settings)
+
+    ptr = settings['code_printer'].lower()
+    if ptr == 'opsc' or ptr == 'opsccodeprinter':
+        return OPSCCodePrinter(settings)
+    elif ptr == 'cpp23' or ptr == 'cpp23codeprinter':
+        return CPP23CodePrinter(settings)
+    elif ptr == 'cuda' or ptr == 'cudacodeprinter':
+        return CUDACodePrinter(settings)
+    
+    raise NotImplementedError(f'{ptr} is not a valid code printer.')
+
 
 def ccode(expr, settings={}):
     """ Create an OPSC code printer object and write out the expression as an OPSC code string.
@@ -345,6 +586,11 @@ def ccode(expr, settings={}):
     :arg constants: Constants that should be defined at the top of the OPSC code.
     :returns: The expression in OPSC code.
     :rtype: str."""
+        
+    # This code printer ought to be cached elsewhere to avoid excessive allocations.
+    # code_print.doprint() does not change the printer's state so it can be re-used.
+    code_print = create_code_printer(settings)
+    
     if isinstance(expr, Equality):
         if 'boolean_equality' in settings.keys():
             if settings['boolean_equality']:
@@ -357,14 +603,10 @@ def ccode(expr, settings={}):
             pass
         else:
             expr = pow_to_constant(expr)
-        code_print = OPSCCodePrinter(settings)
-        code = code_print.doprint(expr.lhs) \
-            + equals + OPSCCodePrinter(settings).doprint(expr.rhs)
-        if isinstance(expr.lhs, GridVariable):
-            code = code
+        code = code_print.doprint(expr.lhs) + equals + code_print.doprint(expr.rhs)
         return code
-    else:
-        return OPSCCodePrinter(settings).doprint(expr)
+    
+    return code_print.doprint(expr)
 
 
 class WriteString(object):
@@ -406,7 +648,7 @@ def indent_code(code_lines):
 
 
 class OPSC(object):
-    def __init__(self, algorithm, simulation_parameters=None, operation_count=False, OPS_diagnostics=1, OPS_V2=True, mixed_precision_config=None):
+    def __init__(self, algorithm, operation_count=False, OPS_diagnostics=1, OPS_V2=True, mixed_precision_config=None, simulation_parameters=None, code_printer='opsc'):
         """ Generating an OPSC code from the algorithm class.
         :arg object algorithm: An OpenSBLI algorithm class.
         :arg bool operation_count: If True, prints the number of arithmetic operations per kernel.
@@ -419,6 +661,8 @@ class OPSC(object):
             self.ops_headers = {'input': "const %s *%s", 'output': '%s *%s', 'inout': '%s *%s'}
         self.OPS_V2 = OPS_V2
         self.simulation_parameters = simulation_parameters
+        self.code_printer = code_printer
+        print("The", code_printer, "code printer is being used.")
         # if not algorithm.MultiBlock:
         self.operation_count = operation_count
         self.OPS_diagnostics = OPS_diagnostics
@@ -518,9 +762,7 @@ class OPSC(object):
                     for d in simulation_dsets:
                         if d in arrays:
                             store_dsets.append(d)
-                            # print("Before:", d.datatype.opsc())
                             d.datatype = modified_precision
-                            # print("After:", d.datatype.opsc())
                 else:
                     raise ValueError("Unknown mixed precision preset: {}. Please choose from: q_vector, wk_arrays, residuals, RK_arrays, or custom.".format(strategy))
                 store_dsets = sorted(store_dsets, key=lambda x: str(x))
@@ -673,8 +915,8 @@ class OPSC(object):
         gridvariables = set()
         out = []
         for eq in kernel.equations:
-            default_kernel_settings = {'kernel': True, 'OPS_V2': self.OPS_V2, 'arrays_to_cast' : self.arrays_to_cast}
-            bool_settings = {'kernel': True, 'OPS_V2': self.OPS_V2, 'arrays_to_cast' : self.arrays_to_cast, 'boolean_equality' : True}
+            default_kernel_settings = {'kernel': True, 'OPS_V2': self.OPS_V2, 'arrays_to_cast' : self.arrays_to_cast, 'code_printer' : self.code_printer}
+            bool_settings = {'kernel': True, 'OPS_V2': self.OPS_V2, 'arrays_to_cast' : self.arrays_to_cast, 'boolean_equality' : True, 'code_printer' : self.code_printer}
             # Note which DataSets are used on the LHS of equations
             if self.cast_precision:
                 self.__cast_eq_precision(eq)
@@ -755,7 +997,7 @@ class OPSC(object):
         # Sort the gridvariables to fix the order
         gridvariables = sorted(list(gridvariables), key=lambda x: str(x))
         for gv in gridvariables:
-            code += ["%s %s = 0.0%s;" % (SimulationDataType.opsc(), str(gv), "f" if isinstance(SimulationDataType.dtype(), FloatC) else "f16" if isinstance(SimulationDataType.dtype(), Half) else "")]
+            code += ["%s %s = %s;" % (SimulationDataType.opsc(), str(gv), ccode(Float(0.0), settings=default_kernel_settings))]
         # if '\n' in out[-1]:
         #     out[-1] = out[-1].replace('\n', '', out[-1].count(' \n ')-1)
         code += out + ['}']  # close Kernel
@@ -1170,7 +1412,7 @@ class OPSC(object):
     def declare_reduction(self, rv):
         """ Declare a reduction variable in the code with the necessary handles."""
         dtype = SimulationDataType.dtype()
-        variable_declaration = WriteString("%s %s = 0.0%s;" % (dtype.opsc(), str(rv.value), "f" if isinstance(SimulationDataType.dtype(), FloatC) else "f16" if isinstance(SimulationDataType.dtype(), Half) else ""))
+        variable_declaration = WriteString("%s %s = %s;" % (dtype.opsc(), str(rv.value), ccode(Float(0.0), settings={'code_printer' : self.code_printer})))
         handle_declaration = WriteString('ops_reduction %s = ops_decl_reduction_handle(sizeof(%s), \"%s\", \"reduction_%s\");' % (str(rv), dtype.opsc(), dtype.opsc(), str(rv)))
         out = [variable_declaration, handle_declaration]
         return out
