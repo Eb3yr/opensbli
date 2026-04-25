@@ -526,9 +526,7 @@ class CUDACodePrinter(OPSCCodePrinter):
         # CUDA will not convert types like int to half in inequalities so we must convert it manually.
         # Casting half to half is a no-op so has no performance cost.
         if isinstance(SimulationDataType.dtype(), Half):
-            op = expr.rel_op
-            return '(half)(%s) $s (half)($s)' % (self._print(expr.lhs), sop, self._print(expr.rhs))
-        
+            return '(half)(%s) %s (half)(%s)' % (self._print(expr.lhs), expr.rel_op, self._print(expr.rhs))
         return super()._print_Relational(expr)
 
 def pow_to_constant(expr):
