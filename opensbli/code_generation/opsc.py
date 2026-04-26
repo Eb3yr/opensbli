@@ -304,10 +304,10 @@ class CPP23CodePrinter(OPSCCodePrinter):
 
     def _print_Float(self, expr):
         if isinstance(SimulationDataType.dtype(), FloatC):
-            return str(expr) + 'f'
+            return str(float(expr)) + 'f'
         elif isinstance(SimulationDataType.dtype(), Half):
-            return str(expr) + 'f16'
-        return str(expr)
+            return str(float(expr)) + 'f16'
+        return str(float(expr))
 
     def _print_sin(self, expr):
         return 'sin(%s)' % self.return_args(expr)
@@ -425,7 +425,7 @@ class CPP23ExplicitCastCodePrinter(CPP23CodePrinter):
         args_code = [self._print(a) for a in expr.args]
         for i in range(nargs-1):
             # Max of the last 2 arguments in the array
-            template = 'fmax((%s)(%s), (%s)(%s))' % (self._get_cast(), args_code[-2], self._get_cast(), args_code[-1])
+            template = 'fmax(%s(%s), %s(%s))' % (self._get_cast(), args_code[-2], self._get_cast(), args_code[-1])
             # Remove the last 2 entries and append the max of the last 2
             del args_code[-2:]
             args_code.append(template)
