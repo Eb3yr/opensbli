@@ -699,8 +699,10 @@ class TVDCharacteristic(Characteristic):
         pre_process_equations += g_equations
         # Step 8: Calculate the phi_{j+1/2} terms
         gamma_terms = [GridVariable('gamma_%d' % i) for i in range(nvars)]
-        eps = ConstantObject('eps_TVD')
-        eps.value = 0.00000001
+        #eps = ConstantObject('eps_TVD')
+        #eps.value = 0.00000001
+        eps = ConstantObject('eps')
+        eps.value = 1.0e-40
         ConstantsToDeclare.add_constant(eps)
         for i, gamma in enumerate(gamma_terms):
             if_expr, else_expr = 0, sigmas_0[i]*alphas[1,i]*(g_terms[1][i] - g_terms[0][i]) / (alphas[1,i]**2 + eps)

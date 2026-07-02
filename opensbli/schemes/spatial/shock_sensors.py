@@ -10,7 +10,9 @@ from opensbli.core.grid import GridVariable as gv
 
 class ShockSensor(object):
     def __init__(self):
-        self.epsilon = 1.0e-40
+        self.epsilon = ConstantObject('eps')
+        self.epsilon.value = 1.0e-40
+        CTD.add_constant(self.epsilon)
         return
 
     def ducros_equations(self, block, coordinate_symbol, metrics=None, name='kappa', Mach=None):
@@ -59,7 +61,8 @@ class ShockSensor(object):
         return output_eqns, sensor_array
 
     def Ren_sensor(self, block, name='kappa'):
-        eps = 0.001
+        #eps = 0.001
+        eps = self.epsilon
         # r_j
         base_loc = 0
         pm, p, pp = increment_dataset(block.location_dataset('p'), 0, base_loc -1), increment_dataset(block.location_dataset('p'), 0, base_loc), increment_dataset(block.location_dataset('p'), 0, base_loc + 1)

@@ -8,6 +8,7 @@ from sympy import IndexedBase, Symbol, Rational, solve, interpolating_poly, inte
 from opensbli.core.opensblifunctions import WenoDerivative
 from opensbli.core.opensbliobjects import ConstantObject
 from opensbli.core.kernel import Kernel
+from opensbli.core.kernel import ConstantsToDeclare as CTD
 from opensbli.equation_types.opensbliequations import SimulationEquations, OpenSBLIEq, NonSimulationEquations
 from opensbli.core.grid import GridVariable as gv
 from .scheme import Scheme
@@ -290,7 +291,9 @@ class RightWenoReconstructionVariable(WenoReconstructionVariable):
 class WenoZ(object):
     def __init__(self, k):
         self.k = k
-        self.eps = 1.0e-40
+        self.eps = ConstantObject('eps')
+        self.eps.value = 1.0e-40
+        CTD.add_constant(self.eps)
         return
 
     def global_smoothness_indicator(self, RV):
@@ -348,7 +351,10 @@ class WenoZ(object):
 class WenoJS(object):
     def __init__(self, k):
         self.k = k
-        self.eps = 1e-6
+        self.eps = ConstantObject('eps')
+        self.eps.value = 1e-40
+        CTD.add_constant('eps')
+        #self.eps = 1e-6
         return
 
     def generate_alphas(self, RV, WenoConfig):
